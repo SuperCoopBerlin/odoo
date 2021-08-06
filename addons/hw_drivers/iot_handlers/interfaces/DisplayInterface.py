@@ -28,6 +28,7 @@ class DisplayInterface(Interface):
                 }
                 display_devices[display_identifier] = iot_device
                 x_screen += 1
+                break #Only use first display
 
         if not len(display_devices):
             # No display connected, create "fake" device to be accessed from another computer

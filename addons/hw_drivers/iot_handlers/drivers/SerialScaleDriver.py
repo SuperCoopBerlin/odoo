@@ -228,7 +228,18 @@ class Toledo8217Driver(ScaleDriver):
 
         try:
             with serial_connection(device['identifier'], protocol, is_probing=True) as connection:
-                connection.write(b'Ehello' + protocol.commandTerminator)
+                #connection.write(b'Ehello' + protocol.commandTerminator)
+                connection.write(b'E')
+                time.sleep(0.1)
+                connection.write(b'h')
+                time.sleep(0.1)
+                connection.write(b'e')
+                time.sleep(0.1)
+                connection.write(b'l')
+                time.sleep(0.1)
+                connection.write(b'l')
+                time.sleep(0.1)
+                connection.write(b'o')
                 time.sleep(protocol.commandDelay)
                 answer = connection.read(8)
                 if answer == b'\x02E\rhello':

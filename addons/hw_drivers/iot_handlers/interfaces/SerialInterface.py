@@ -11,7 +11,7 @@ class SerialInterface(Interface):
 
     def get_devices(self):
         serial_devices = {}
-        for identifier in glob('/dev/serial/by-path/*'):
+        for identifier in glob('/dev/serial/by-id/*'):
             serial_devices[identifier] = {
                 'identifier': identifier
             }
