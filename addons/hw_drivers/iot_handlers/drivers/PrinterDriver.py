@@ -81,8 +81,8 @@ class PrinterDriver(Driver):
         self.send_status()
 
         self.receipt_protocol = 'star' if 'STR_T' in device['device-id'] else 'escpos'
-        if 'direct' in self.device_connection and any(cmd in device['device-id'] for cmd in ['CMD:STAR;', 'CMD:ESC/POS;']):
-            self.print_status()
+        #if 'direct' in self.device_connection and any(cmd in device['device-id'] for cmd in ['CMD:STAR;', 'CMD:ESC/POS;']):
+        #    self.print_status()
 
     @classmethod
     def supported(cls, device):
