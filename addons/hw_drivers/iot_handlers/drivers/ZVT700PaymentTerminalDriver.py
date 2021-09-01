@@ -315,7 +315,7 @@ class ZVT700PaymentTerminalDriver(Driver):
             cur_fact = 10 ** cur_decimals
             return int(amount * cur_fact)
         else:
-            return (amount*100)
+            return int(amount*100)
 
     def _get_currency_code(self, payment_info_dict):
         cur_iso_letter = payment_info_dict['currency_iso'].upper()
