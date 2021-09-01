@@ -111,12 +111,12 @@ class ZVT700PaymentTerminalControllerOldRoute(http.Controller):
     @http.route(
         '/hw_proxy/payment_terminal_turnover_totals',
         type='json', auth='none', cors='*')
-    def payment_terminal_turnover_totals(self):
+    def payment_terminal_turnover_totals(self, print_receipt):
         _logger.debug(
             'Call payment_terminal_turnover_totals via old route')
         answer = False
         if ACTIVE_TERMINAL:
-            answer = ACTIVE_TERMINAL._start_turnover_totals_old_route()
+            answer = ACTIVE_TERMINAL._start_turnover_totals_old_route(print_receipt)
 
         _logger.debug('Result of payment_terminal_turnover_totals: %s' % answer)
         return answer
@@ -124,12 +124,12 @@ class ZVT700PaymentTerminalControllerOldRoute(http.Controller):
     @http.route(
         '/hw_proxy/payment_terminal_end_of_day',
         type='json', auth='none', cors='*')
-    def payment_terminal_end_of_day(self):
+    def payment_terminal_end_of_day(self, print_receipt):
         _logger.debug(
             'Call payment_terminal_end_of_day via old route')
         answer = False
         if ACTIVE_TERMINAL:
-            answer = ACTIVE_TERMINAL._start_end_of_day_old_route()
+            answer = ACTIVE_TERMINAL._start_end_of_day_old_route(print_receipt)
 
         _logger.debug('Result of payment_terminal_end_of_day: %s' % answer)
         return answer
@@ -175,15 +175,15 @@ class ZVT700PaymentTerminalDriver(Driver):
         with self._device_lock:
             return self._transaction_start(payment_info)
 
-    def _start_turnover_totals_old_route(self):
+    def _start_turnover_totals_old_route(self, print_receipt):
         """Used when the iot app is not installed"""
         with self._device_lock:
-            return self._turnover_totals_start()
+            return self._turnover_totals_start(print_receipt)
 
-    def _start_end_of_day_old_route(self):
+    def _start_end_of_day_old_route(self, print_receipt):
         """Used when the iot app is not installed"""
         with self._device_lock:
-            return self._end_of_day_start()
+            return self._end_of_day_start(print_receipt)
 
     def _set_name(self):
         try:
@@ -509,7 +509,7 @@ class ZVT700PaymentTerminalDriver(Driver):
             self._push_status()
         return res
 
-    def _turnover_totals_start(self):
+    def _turnover_totals_start(self, print_receipt=True):
         self._change_print_config(enable_ECR_printing=True)
 
         now = datetime.datetime.now()
@@ -517,18 +517,22 @@ class ZVT700PaymentTerminalDriver(Driver):
         _logger.debug("Turnover totals result: %s" % (result))
         self._change_print_config(enable_ECR_printing=False)
 
+        res = {'result': result}
         if result:
             printout = self._ecr.totalslog
             _logger.debug("Turnover totals: %s" % (printout))
 
             printout_decoded = self.decode_receipt_with_attributes(printout)
-            self.print_receipt(printout_decoded)
+            if print_receipt:
+                self.print_receipt(printout_decoded)
             self.receipt_queue.put({'date': now,
-                                    'turnover_receipt': printout_decoded
+                                    'turnover_totals_receipt': printout_decoded
                                     })
-        return result
+            res['turnover_totals_receipt'] = printout_decoded
+
+        return res
             
-    def _end_of_day_start(self):
+    def _end_of_day_start(self, print_receipt=True):
         self._change_print_config(enable_ECR_printing=True)
 
         now = datetime.datetime.now()
@@ -536,16 +540,20 @@ class ZVT700PaymentTerminalDriver(Driver):
         _logger.debug("End of day result: %s" % (result))
         self._change_print_config(enable_ECR_printing=False)
 
+        res = {'result': result}
         if result:
             printout = self._ecr.daylog
             _logger.debug("End of day: %s" % (printout))
             
             printout_decoded = self.decode_receipt_with_attributes(printout)
-            self.print_receipt(printout_decoded)
+            if print_receipt:
+                self.print_receipt(printout_decoded)
             self.receipt_queue.put({'date': now,
-                                    'turnover_receipt': printout_decoded
+                                    'end_of_day_receipt': printout_decoded
                                     })
-        return result
+            res['end_of_day_receipt'] = printout_decoded
+
+        return res
 
 
     def action(self, data):
@@ -567,15 +575,21 @@ class ZVT700PaymentTerminalDriver(Driver):
 
     def dump_receipt(self, receipt_dict):
         date = receipt_dict['date']
+        receipt = None
+        
         if 'merchant_receipt' in receipt_dict:
             receipt = receipt_dict['merchant_receipt']
             receipt += receipt_dict['cardholder_receipt']
-        elif 'turnover_receipt' in receipt_dict:
-           receipt = receipt_dict['turnover_receipt']
+        elif 'turnover_totals_receipt' in receipt_dict:
+           receipt = receipt_dict['turnover_totals_receipt']
         elif 'daylog_receipt' in receipt_dict:
             receipt = receipt_dict['daylog_receipt']
-        _logger.debug('Receipt to dump (data: %s) %s' % (date, receipt))
-        # TODO Save receipt to file/cloud
+        
+        if receipt:
+            _logger.debug('Receipt to dump (date: %s) %s' % (date, receipt))
+            # TODO Save receipt to file/cloud
+        else:
+            _logger.debug('Unknown receipt to dump %s' % receipt_dict)
 
     def dump_all_receipts(self):
         if self.receipt_queue.qsize():
