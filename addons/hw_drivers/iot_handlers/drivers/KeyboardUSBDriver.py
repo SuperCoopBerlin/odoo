@@ -263,7 +263,7 @@ class KeyboardUSBDriver(Driver):
         if scancode == 28:  # Return
             self.data['value'] = self._current_barcode
             event_manager.device_changed(self)
-            self._barcodes.put((time.time(), self._current_barcode))
+            self._barcodes.put((time.time(), self._current_barcode if not self._current_barcode.startswith('F') else self._current_barcode[1:]))
             self._current_barcode = ''
         else:
             self._current_barcode += self._scancode_to_char(scancode)
@@ -348,7 +348,7 @@ class KeyboardUSBDriver(Driver):
 
         with self.read_barcode_lock:
             try:
-                timestamp, barcode = self._barcodes.get(True, 55)
+                timestamp, barcode = self._barcodes.get(True, 0.2)
                 if timestamp > time.time() - 5:
                     return barcode
             except Empty:
@@ -362,6 +362,11 @@ class KeyboardUSBController(http.Controller):
     def get_barcode(self):
         scanners = [iot_devices[d] for d in iot_devices if iot_devices[d].device_type == "scanner"]
         if scanners:
-            return scanners[0].read_next_barcode()
-        time.sleep(5)
+            for i, scanner in enumerate(scanners):
+                #_logger.debug("/hw_proxy/scanner: Reading scanner %d" % i)
+                ret = scanner.read_next_barcode()
+                if ret != '' and ret != None:
+                    _logger.debug("/hw_proxy/scanner: Barcode (scanner %d): %s" % (i, ret))
+                    return ret
+        time.sleep(0.1)
         return None
