@@ -220,7 +220,7 @@ class ZVT700PaymentTerminalDriver(Driver):
         """
         try:
             _logger.debug("Probing device %s with %s protocol" % (device['identifier'], cls.protocol_name))
-            ecr = ECR(device=device['identifier'], password='111111')
+            ecr = ECR(device=device['identifier'], password='111111', baudrate=115200)
             # Enable ecrterm logging
             #ecr.transport.slog = ecr_log
             #ecr.ecr_log = ecr_log
@@ -250,7 +250,7 @@ class ZVT700PaymentTerminalDriver(Driver):
         return res
 
     def _connect_and_configure(self, device):
-        self._ecr = ECR(device=device, password='111111')
+        self._ecr = ECR(device=device, password='111111', baudrate=115200)
         # Enable ecrterm logging
         #self._ecr.transport.slog = ecr_log
         #self._ecr.ecr_log = ecr_log
@@ -415,6 +415,7 @@ class ZVT700PaymentTerminalDriver(Driver):
         payment_type = self._get_payment_type(payment_info_dict)
 
         dummy_transaction = False
+        dump_transaction = False
 
         try:
             if not dummy_transaction:
@@ -431,15 +432,16 @@ class ZVT700PaymentTerminalDriver(Driver):
                     _logger.debug("Last status (type %s): %s" % (type(last_status), last_status))
 
                     printout = self._ecr.last_printout_with_attribute()
+                    
+                    if dump_transaction:
+                        import pickle
+                        try:
+                            with open('/home/pi/printout_dump.pickle', 'wb') as f:
+                                pickle.dump(printout, f)
+                        except Exception as e:
+                            _logger.debug("Pickle exception: %s" % e)
 
-                    import pickle
-                    try:
-                        with open('/home/pi/printout_dump.pickle', 'wb') as f:
-                            pickle.dump(printout, f)
-                    except Exception as e:
-                        _logger.debug("Pickle exception: %s" % e)
-
-                    _logger.debug("Last printout dump: %s" % pickle.dumps(printout))
+                        _logger.debug("Last printout dump: %s" % pickle.dumps(printout))
                 else:
                     import pickle
                     with open('/home/pi/printout_dump.pickle', 'rb') as f:
@@ -496,7 +498,7 @@ class ZVT700PaymentTerminalDriver(Driver):
                 }
             else:
                 _logger.debug("Transaction failed. %s" % payment_info_dict)
-                self._ecr.show_text(lines=['Abbruch', 'oder', 'Fehler'], beeps=0)
+                #self._ecr.show_text(lines=['Abbruch', 'oder', 'Fehler'], beeps=0)
         except Exception as e:
             _logger.error('Exception during terminal transaction: %s' % str(e))
             self._set_status("error",
