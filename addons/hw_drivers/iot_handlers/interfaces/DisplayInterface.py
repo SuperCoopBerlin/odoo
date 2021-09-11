@@ -19,6 +19,10 @@ class DisplayInterface(Interface):
             display_id, hdmi_id = match.groups()
             tvservice_output = subprocess.check_output(['tvservice', '-nv', display_id]).decode().strip()
             if tvservice_output:
+                if x_screen == 0: #Ignore first display
+                    x_screen += 1
+                    continue
+
                 display_name = tvservice_output.split('=')[1]
                 display_identifier = sub('[^a-zA-Z0-9 ]+', '', display_name).replace(' ', '_') + "_" + str(hdmi_id)
                 iot_device = {
@@ -28,7 +32,6 @@ class DisplayInterface(Interface):
                 }
                 display_devices[display_identifier] = iot_device
                 x_screen += 1
-                break #Only use first display
 
         if not len(display_devices):
             # No display connected, create "fake" device to be accessed from another computer
