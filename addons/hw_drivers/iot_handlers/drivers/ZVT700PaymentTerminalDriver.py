@@ -218,6 +218,7 @@ class ZVT700PaymentTerminalDriver(Driver):
         :return: whether the device is supported by the driver
         :rtype: bool
         """
+        res = False
         try:
             _logger.debug("Probing device %s with %s protocol" % (device['identifier'], cls.protocol_name))
             ecr = ECR(device=device['identifier'], password='111111', baudrate=115200)
@@ -228,7 +229,6 @@ class ZVT700PaymentTerminalDriver(Driver):
             # Try multiple times in case the PT is still booting
             attempts_total = 3
             num_attempts = 0
-            res = False
 
             while num_attempts < attempts_total:
                 num_attempts += 1
