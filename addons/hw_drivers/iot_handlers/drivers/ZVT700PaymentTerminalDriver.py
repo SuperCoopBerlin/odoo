@@ -264,8 +264,8 @@ class ZVT700PaymentTerminalDriver(Driver):
     def _connect_and_configure(self, device):
         self._ecr = ECR(device=device, password='111111', baudrate=115200)
         # Enable ecrterm logging
-        self._ecr.transport.slog = ecr_log
-        self._ecr.ecr_log = ecr_log
+        #self._ecr.transport.slog = ecr_log
+        #self._ecr.ecr_log = ecr_log
 
         attempts_total = 3
         num_attempts = 0
