@@ -19,7 +19,9 @@ from ecrterm.ecr import ECR
 from ecrterm.packets.base_packets import Registration
 
 #For transport debug logging
-from ecrterm.common import TERMINAL_STATUS_CODES
+from ecrterm.common import (
+    TERMINAL_STATUS_CODES, INTERMEDIATE_STATUS_CODES, ERRORCODES,
+    INTERMEDIATE_STATUS_CODES_DE, ERRORCODES_DE)
 from ecrterm.conv import bs2hl, toBytes, toHexString
 from ecrterm.packets.base_packets import (
     Authorisation, Completion, DisplayText, EndOfDay, Packet, PrintLine,
@@ -88,7 +90,7 @@ class ZVT700PaymentTerminalControllerOldRoute(http.Controller):
             'Call payment_terminal_transaction_start via old route with '
             'payment_info=%s' % (payment_info))
         answer = False
-        if ACTIVE_TERMINAL:
+        if ACTIVE_TERMINAL and ACTIVE_TERMINAL._status['status'] != 'disconnected':
             answer = ACTIVE_TERMINAL._start_transaction_old_route(payment_info)
 
         _logger.debug('Result of payment_terminal_transaction_start: %s' % answer)
@@ -102,7 +104,7 @@ class ZVT700PaymentTerminalControllerOldRoute(http.Controller):
             'Call payment_terminal_transaction_start_with_return via old route with '
             'payment_info=%s' % (payment_info))
         answer = False
-        if ACTIVE_TERMINAL:
+        if ACTIVE_TERMINAL and ACTIVE_TERMINAL._status['status'] != 'disconnected':
             answer = ACTIVE_TERMINAL._start_transaction_old_route(payment_info)
 
         _logger.debug('Result of payment_terminal_transaction_start_with_return: %s' % answer)
@@ -115,7 +117,7 @@ class ZVT700PaymentTerminalControllerOldRoute(http.Controller):
         _logger.debug(
             'Call payment_terminal_turnover_totals via old route')
         answer = False
-        if ACTIVE_TERMINAL:
+        if ACTIVE_TERMINAL and ACTIVE_TERMINAL._status['status'] != 'disconnected':
             answer = ACTIVE_TERMINAL._start_turnover_totals_old_route(print_receipt)
 
         _logger.debug('Result of payment_terminal_turnover_totals: %s' % answer)
@@ -164,6 +166,7 @@ class ZVT700PaymentTerminalDriver(Driver):
 
         self._status = {'status': status, 'message_title': '', 'message_body': ''}
         self._status['in_transaction'] = False
+        self._push_status()
 
         global ACTIVE_TERMINAL
         ACTIVE_TERMINAL = self
@@ -209,6 +212,15 @@ class ZVT700PaymentTerminalDriver(Driver):
         self.data['status'] = self._status
         event_manager.device_changed(self)
 
+    def disconnect(self):
+        msg = 'Terminal was disconnected'
+        _logger.debug(msg)
+        self._status = {'status': "disconnected", 'message_title': msg, 'message_body': ""}
+        self._push_status()
+
+        super(ZVT700PaymentTerminalDriver, self).disconnect()
+        
+
     @classmethod
     def supported(cls, device):
         """Checks whether the device, which port info is passed as argument, is supported by the driver.
@@ -252,8 +264,8 @@ class ZVT700PaymentTerminalDriver(Driver):
     def _connect_and_configure(self, device):
         self._ecr = ECR(device=device, password='111111', baudrate=115200)
         # Enable ecrterm logging
-        #self._ecr.transport.slog = ecr_log
-        #self._ecr.ecr_log = ecr_log
+        self._ecr.transport.slog = ecr_log
+        self._ecr.ecr_log = ecr_log
 
         attempts_total = 3
         num_attempts = 0
@@ -274,11 +286,12 @@ class ZVT700PaymentTerminalDriver(Driver):
                         tlv={'tlv12': [40]}, # Set maximum print line width to 40
                     )
 
-                    res = self._ecr.status()
-                    _logger.debug("%s terminal status is: %s" % (self.protocol_name, hex(res)))
+                    code = self._ecr.status()
+                    _logger.debug("%s terminal status is: %s" % (self.protocol_name, hex(code)))
 
-                    if res == 0:
+                    if code == 0:
                         self._ecr.show_text(lines=['Verbindung', 'erfolgreich', 'hergestellt'], beeps=0)
+                        res = True
                         break
                     else:
                         _logger.debug("Detecting %s terminal (%s) failed, status: %d, attempt %d/%d" % (self.protocol_name, self.device_identifier, res, num_attempts, attempts_total))
@@ -289,22 +302,6 @@ class ZVT700PaymentTerminalDriver(Driver):
                     pass
 
         return res
-
-    def _set_status(self, status, message=None):
-        if status == self._status['status']:
-            if message is not None and message != self._status['messages'][-1]:
-                self._status['messages'].append(message)
-        else:
-            self._status['status'] = status
-            if message:
-                self._status['messages'] = [message]
-            else:
-                self._status['messages'] = []
-
-        if status == 'error' and message:
-            _logger.error('Payment Terminal Error: ' + message)
-        elif status == 'disconnected' and message:
-            _logger.warning('Disconnected Terminal: ' + message)
 
     def _get_amount(self, payment_info_dict):
         amount = payment_info_dict['amount']
@@ -421,11 +418,12 @@ class ZVT700PaymentTerminalDriver(Driver):
             if not dummy_transaction:
                 self._change_print_config(enable_ECR_printing=True)
                 success = self._ecr.payment(amount_cent=amount)
+
+                
             else:
                 success = True
 
             if success:
-                #StatusInformation{04 0F} **[{'result_code': [0]}, {'amount': '000000000100'}, {'currency_code': '0978'}, {'trace_number': '000018'}, {'time': '130936'}, {'date_day': '0818'}, {'tid': '68282941'}, {'card_number': 'H%\x11\x00\x10`B\x13u?'}, {'card_sequence_number': '0000'}, {'receipt': '0003'}, {'aid': [54, 49, 52, 55, 57, 48, 0, 0]}, {'type': [96]}, {'card_expire': '2212'}, {'card_type': [5]}, {'card_name': 'Girocard'}, {'additional': 'Autorisierung erfolgt'}, {'turnover': '000003'}]
 
                 if not dummy_transaction:
                     last_status = self._ecr.last_status_information()[-1]
@@ -498,12 +496,40 @@ class ZVT700PaymentTerminalDriver(Driver):
                 }
             else:
                 _logger.debug("Transaction failed. %s" % payment_info_dict)
-                #self._ecr.show_text(lines=['Abbruch', 'oder', 'Fehler'], beeps=0)
+
+                last_intermediate_status = self._ecr.last_intermediate_status_information()
+                _logger.debug("Intermediate status information: %s" % last_intermediate_status)
+                if len(last_intermediate_status) > 0:
+                    intermediate_status = last_intermediate_status[-1]
+                    intermediate_status_msg = INTERMEDIATE_STATUS_CODES_DE.get(intermediate_status, 'No intermediate_status')
+                    _logger.debug("Last intermediate status: %s, reason: %s" % (str(intermediate_status), intermediate_status_msg))
+
+                last_aborts = self._ecr.last_aborts()
+                _logger.debug("Last aborts: %s" % last_aborts)
+                if len(last_aborts) > 0:
+                    last_abort_error_code = last_aborts[-1]
+                    last_abort_error_msg = ERRORCODES_DE.get(last_abort_error_code, 'No error code')
+                    _logger.debug("Last abort error code: %s, reason: %s" % (str(last_abort_error_code), last_abort_error_msg))
+                    
+                    res = {
+                        'transaction_result': 1,
+                        'error_code': last_abort_error_code,
+                        'error_msg': last_abort_error_msg
+                    }
+
+                else:
+                    last_packet = self._ecr.last_packet()
+                    _logger.debug("Unknown transaction error. Last packet: %s" % last_packet)
+                    res = {
+                        'transaction_result': 1,
+                        'error_code': 99, #Unknown error reason
+                        'error_msg': 'Unknown transaction error'
+                    }
         except Exception as e:
-            _logger.error('Exception during terminal transaction: %s' % str(e))
-            self._set_status("error",
-                             "Exception during terminal transaction {}"
-                             .format(self.device_name))
+            msg = 'Exception during terminal transaction: %s' % str(e)
+            _logger.error("%s %s" % (msg, traceback.format_exc()))
+            self._status = {'status': "error", 'message_title': msg, 'message_body': traceback.format_exc()}
+            self._push_status()
         finally:
             if not dummy_transaction:
                 self._change_print_config(enable_ECR_printing=False)
@@ -636,7 +662,7 @@ class ZVT700PaymentTerminalDriver(Driver):
 
                 self.dump_all_receipts()
 
-                time.sleep(60)
+                time.sleep(5)
 
                 if periodic_turnover_totals:
                     date_now = datetime.datetime.now()
@@ -662,3 +688,4 @@ class ZVT700PaymentTerminalDriver(Driver):
             except Exception as e:
                 _logger.debug(e, traceback.format_exc()) 
                 pass
+        _logger.debug('Terminating run loop')
