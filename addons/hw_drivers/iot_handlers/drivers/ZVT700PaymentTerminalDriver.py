@@ -165,7 +165,6 @@ class ZVT700PaymentTerminalDriver(Driver):
             status = 'disconnected'
 
         self._status = {'status': status, 'message_title': '', 'message_body': ''}
-        self._status['in_transaction'] = False
         self._push_status()
 
         global ACTIVE_TERMINAL
@@ -305,14 +304,7 @@ class ZVT700PaymentTerminalDriver(Driver):
 
     def _get_amount(self, payment_info_dict):
         amount = payment_info_dict['amount']
-
-        if 'currency_decimals' in payment_info_dict:
-            # Compatibility with OCA pos_payment_terminal addon
-            cur_decimals = payment_info_dict['currency_decimals']
-            cur_fact = 10 ** cur_decimals
-            return int(amount * cur_fact)
-        else:
-            return int(amount*100)
+        return int(amount*100)
 
     def _get_currency_code(self, payment_info_dict):
         cur_iso_letter = payment_info_dict['currency_iso'].upper()
@@ -384,17 +376,6 @@ class ZVT700PaymentTerminalDriver(Driver):
     def _transaction_start(self, payment_info):
         """This function executes the transaction
         """
-        # OCA pos_payment_terminal
-        # payment_info={"amount":750, "currency_iso": "EUR", "currency_decimals": 2, "payment_mode": "card", "order_id": "00014-001-0001"}
-        # payment_info={'amount': 0.5, 'currency_iso': 'EUR', 'currency_decimals': 2, 'payment_mode': 'card', 'order_id': '00014-001-0001'}
-
-        # https://github.com/AwesomeFoodCoops/odoo-production/blob/12.0/pos_payment_terminal/static/src/js/devices.js
-        # payment_info = {
-        #     'amount': order.get_due(line),
-        #     'currency_iso': currency_iso,
-        #     'payment_mode': line.cashregister.journal.pos_terminal_payment_mode,
-        #     'wait_terminal_answer': this.wait_terminal_answer(),
-        # };
 
         payment_info_dict = json.loads(payment_info)
         assert isinstance(payment_info_dict, dict), \
@@ -402,12 +383,10 @@ class ZVT700PaymentTerminalDriver(Driver):
         res = False
 
         _logger.debug("Starting %s transaction: %s" % (self.protocol_name, payment_info_dict))
-        self._status['in_transaction'] = True
-        self._push_status()
 
         amount = self._get_amount(payment_info_dict)
 
-        # Currently not used; assume correctly configures PT
+        # Currently not used; assume correctly configured PT
         currency_code = self._get_currency_code(payment_info_dict)
         payment_type = self._get_payment_type(payment_info_dict)
 
@@ -418,13 +397,10 @@ class ZVT700PaymentTerminalDriver(Driver):
             if not dummy_transaction:
                 self._change_print_config(enable_ECR_printing=True)
                 success = self._ecr.payment(amount_cent=amount)
-
-                
             else:
                 success = True
 
             if success:
-
                 if not dummy_transaction:
                     last_status = self._ecr.last_status_information()[-1]
                     _logger.debug("Last status (type %s): %s" % (type(last_status), last_status))
@@ -434,20 +410,21 @@ class ZVT700PaymentTerminalDriver(Driver):
                     if dump_transaction:
                         import pickle
                         try:
+                            with open('/home/pi/last_status_dump.pickle', 'wb') as f:
+                                pickle.dump(last_status, f)
                             with open('/home/pi/printout_dump.pickle', 'wb') as f:
                                 pickle.dump(printout, f)
                         except Exception as e:
                             _logger.debug("Pickle exception: %s" % e)
-
-                        _logger.debug("Last printout dump: %s" % pickle.dumps(printout))
                 else:
                     import pickle
+                    with open('/home/pi/last_status_dump.pickle', 'rb') as f:
+                        last_status = pickle.load(f)
                     with open('/home/pi/printout_dump.pickle', 'rb') as f:
                         printout = pickle.load(f)
 
-                    last_status = {'result_code': [0], 'amount': '000000000100', 'currency_code': '0978', 'trace_number': '000046', 'time': '211645', 'date_day': '0824', 'tid': '68282941', 'card_number': 'H%\x11\x00\x10`B\x13u?', 'card_sequence_number': '0000', 'receipt': '0027', 'aid': [57, 53, 48, 50, 55, 49, 0, 0], 'type': [112], 'card_expire': '2212', 'card_type': [5], 'card_name': 'Girocard', 'additional': 'Autorisierung erfolgt', 'turnover': '000027'}
+                    last_status['amount'] = str(amount).zfill(12)
 
-                _logger.debug("Last printout: %s" % printout)
                 start_indices = [i + 1 for i, (attr, txt) in enumerate(printout) if txt == '\x00']
                 printout_merchant = printout[start_indices[0]:start_indices[1]-1]
                 printout_cardholder = printout[start_indices[1]:]
@@ -458,33 +435,6 @@ class ZVT700PaymentTerminalDriver(Driver):
                 _logger.debug("printout_cardholder_decoded: %s" % printout_cardholder_decoded)
                 _logger.debug("printout_merchant_decoded: %s" % printout_merchant_decoded)
 
-                self.receipt_queue.put({'date': datetime.datetime.now(),
-                                        'merchant_receipt': printout_merchant_decoded,
-                                        'cardholder_receipt': printout_cardholder_decoded
-                                       })
-
-                ''''
-                Attribute
-                1000 0000 - RFU
-                1xxx xxxx (not equal to 80h) - this is the last line
-                1111 1111 - Linefeed, count of feeds follows
-                01xx nnnn - centred
-                0x1x nnnn - double width
-                0xx1 nnnn - double height
-                0000 nnnn - normal text
-
-                nnnn = number of characters to indent from left (0-15).
-                - Attribute „1xxx xxxx“ (not equal to 80) indicates also that a switch between customer-receipt and mer-
-                chant-receipt takes place, or vice-versa. It is required for ECRs
-                - that first collect all print-lines in a buffer and then print them together on a page-printer
-                - which use a printer with a cutter.
-                '''
-
-                # Compatibility with OCA pos_payment_terminal addon
-                if 'order_id' in payment_info_dict:
-                    self._status['latest_transactions'] = {payment_info_dict['order_id']: {printout}}
-                    self._push_status()
-
                 res = {
                     'pos_number': last_status['tid'],
                     'transaction_result': last_status['result_code'][0],
@@ -494,6 +444,11 @@ class ZVT700PaymentTerminalDriver(Driver):
                     'merchant_receipt': printout_merchant_decoded,
                     'cardholder_receipt': printout_cardholder_decoded,
                 }
+                
+                self.receipt_queue.put({'date': datetime.datetime.now(),
+                                        'merchant_receipt': printout_merchant_decoded,
+                                        'cardholder_receipt': printout_cardholder_decoded
+                                       })
             else:
                 _logger.debug("Transaction failed. %s" % payment_info_dict)
 
@@ -533,8 +488,6 @@ class ZVT700PaymentTerminalDriver(Driver):
         finally:
             if not dummy_transaction:
                 self._change_print_config(enable_ECR_printing=False)
-            self._status['in_transaction'] = False
-            self._push_status()
         return res
 
     def _turnover_totals_start(self, print_receipt=True):
