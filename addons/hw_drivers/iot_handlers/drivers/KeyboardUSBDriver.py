@@ -263,7 +263,7 @@ class KeyboardUSBDriver(Driver):
         if scancode == 28:  # Return
             self.data['value'] = self._current_barcode
             event_manager.device_changed(self)
-            self._barcodes.put((time.time(), self._current_barcode if not self._current_barcode.startswith('F') else self._current_barcode[1:]))
+            self._barcodes.put((time.time(), ''.join([c for c in self._current_barcode if not c.isalpha()])))
             self._current_barcode = ''
         else:
             self._current_barcode += self._scancode_to_char(scancode)
