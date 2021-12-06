@@ -114,9 +114,10 @@ class DisplayDriver(Driver):
             return "xdotool threw an error, maybe it is not installed on the IoTBox"
 
     def update_customer_facing_display(self, origin, html=None):
-        if origin == self.owner:
-            self.rendered_html = html
-            self.event_data.set()
+        # edit: Always update (try to avoid hanging customer facing display)
+        #if origin == self.owner:
+        self.rendered_html = html
+        self.event_data.set()
 
     def get_serialized_order(self):
         # IMPLEMENTATION OF LONGPOLLING
