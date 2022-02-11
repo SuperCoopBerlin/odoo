@@ -251,7 +251,7 @@ class Toledo8217Driver(ScaleDriver):
             _logger.exception('Error while probing %s with protocol %s' % (device, protocol.name))
         return False
 
-
+'''
 class AdamEquipmentDriver(ScaleDriver):
     """Driver for the Adam Equipment serial scale."""
 
@@ -325,3 +325,4 @@ class AdamEquipmentDriver(ScaleDriver):
         except Exception:
             _logger.exception('Error while probing %s with protocol %s' % (device, protocol.name))
         return False
+'''
