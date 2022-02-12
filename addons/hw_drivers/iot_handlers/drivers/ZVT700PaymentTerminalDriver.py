@@ -232,13 +232,13 @@ class ZVT700PaymentTerminalDriver(Driver):
         res = False
         try:
             _logger.debug("Probing device %s with %s protocol" % (device['identifier'], cls.protocol_name))
-            ecr = ECR(device=device['identifier'], password='111111', baudrate=115200)
+            ecr = ECR(device=device['identifier'], password='111111', baudrate=9600)
             # Enable ecrterm logging
             #ecr.transport.slog = ecr_log
             #ecr.ecr_log = ecr_log
 
             # Try multiple times in case the PT is still booting
-            attempts_total = 3
+            attempts_total = 5
             num_attempts = 0
 
             while num_attempts < attempts_total:
@@ -261,12 +261,12 @@ class ZVT700PaymentTerminalDriver(Driver):
         return res
 
     def _connect_and_configure(self, device):
-        self._ecr = ECR(device=device, password='111111', baudrate=115200)
+        self._ecr = ECR(device=device, password='111111', baudrate=9600)
         # Enable ecrterm logging
         #self._ecr.transport.slog = ecr_log
         #self._ecr.ecr_log = ecr_log
 
-        attempts_total = 3
+        attempts_total = 5
         num_attempts = 0
         res = False
         with self._device_lock:
@@ -601,6 +601,7 @@ class ZVT700PaymentTerminalDriver(Driver):
         response = werkzeug.utils.unescape(req.content.decode())
         _logger.debug("RPC response: %s" % (response))
 
+'''
     def run(self):
         """Continuously check for new receipt in the queue so save"""
         date_old = datetime.datetime(year=2000, month=1, day=1, hour=0, minute=0, second=0)
@@ -609,9 +610,10 @@ class ZVT700PaymentTerminalDriver(Driver):
 
         while not self._stopped.isSet():
             try:
-                _logger.debug('##################')
-                _logger.debug('##################')
-                _logger.debug('#ZVT-700 run loop#')
+                
+                #_logger.debug('##################')
+                #_logger.debug('##################')
+                #_logger.debug('#ZVT-700 run loop#')
 
                 self.dump_all_receipts()
 
@@ -634,11 +636,12 @@ class ZVT700PaymentTerminalDriver(Driver):
                                     _logger.error('Run loop: Exception while receiving message: %s; %s' % (e, traceback.format_exc()))
                                     pass
 
-                _logger.debug('#ZVT-700 run loop#')
-                _logger.debug('###### end #######')
-                _logger.debug('##################')
+                #_logger.debug('#ZVT-700 run loop#')
+                #_logger.debug('###### end #######')
+                #_logger.debug('##################')
 
             except Exception as e:
                 _logger.debug(e, traceback.format_exc()) 
                 pass
         _logger.debug('Terminating run loop')
+'''
