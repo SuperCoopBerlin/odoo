@@ -256,7 +256,7 @@ class ZVT700PaymentTerminalDriver(Driver):
                     time.sleep(5)
                     pass
         except Exception as e:
-            _logger.debug('Error while probing %s with %s protocol (%s)' % (device, cls.protocol_name, e))
+            _logger.error('Error while probing %s with %s protocol (%s)' % (device, cls.protocol_name, e))
             pass
         return res
 
@@ -293,10 +293,10 @@ class ZVT700PaymentTerminalDriver(Driver):
                         res = True
                         break
                     else:
-                        _logger.debug("Detecting %s terminal (%s) failed, status: %d, attempt %d/%d" % (self.protocol_name, self.device_identifier, res, num_attempts, attempts_total))
+                        _logger.error("Detecting %s terminal (%s) failed, status: %d, attempt %d/%d" % (self.protocol_name, self.device_identifier, res, num_attempts, attempts_total))
                         time.sleep(5)
                 except TransportLayerException as e:
-                    _logger.debug("TransportLayerException while detecting %s terminal (%s), attempt %d/%d" % (self.protocol_name, self.device_identifier, num_attempts, attempts_total))
+                    _logger.error("TransportLayerException while detecting %s terminal (%s), attempt %d/%d" % (self.protocol_name, self.device_identifier, num_attempts, attempts_total))
                     time.sleep(5)
                     pass
 
@@ -346,10 +346,14 @@ class ZVT700PaymentTerminalDriver(Driver):
     def _change_print_config(self, enable_ECR_printing):
         CC_EUR = [0x09, 0x78]
 
-        attempts_total = 3
+        attempts_total = 5
         num_attempts = 0
         res = False
         while num_attempts < attempts_total:
+            if(num_attempts > 0):
+                time.sleep(0.5)
+                _logger.debug("Attempt %d/%d in _change_print_config" % (num_attempts+1, attempts_total))
+            num_attempts += 1
             try:
                 self._ecr.register(config_byte=Registration.generate_config(
                     ecr_prints_receipt=enable_ECR_printing,
@@ -363,8 +367,11 @@ class ZVT700PaymentTerminalDriver(Driver):
                 if code == 0:
                     res = True
                     break
+                else:
+                    _logger.warning("Non-zero return code (%d) in _change_print_config" % code)
             except TransportLayerException as e:
-                #Potential timeout, terminal not ready
+                #Potential timeout, terminal not ready, ignore for now
+                _logger.warning("TransportLayerException in _change_print_config: %s" % traceback.format_exc())
                 pass
         return res
     
@@ -487,6 +494,7 @@ class ZVT700PaymentTerminalDriver(Driver):
             self._push_status()
         finally:
             if not dummy_transaction:
+                time.sleep(0.5)
                 self._change_print_config(enable_ECR_printing=False)
         return res
 
@@ -548,7 +556,7 @@ class ZVT700PaymentTerminalDriver(Driver):
                 res = self._actions[data['action']](data)
         except Exception:
             msg = 'An error occured while performing action %s on %s' % (data, self.device_name)
-            _logger.exception(msg)
+            _logger.error(msg)
             self._status = {'status': 'error', 'message_title': msg,
                             'message_body': traceback.format_exc()}
             self._push_status()
