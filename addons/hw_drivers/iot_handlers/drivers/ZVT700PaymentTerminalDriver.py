@@ -31,8 +31,10 @@ from ecrterm.utils import is_stringlike
 from ecrterm.ecr import parse_represented_data
 from ecrterm.exceptions import TransportLayerException
 
-from ecrterm.transmission.transport_serial import SerialMessage 
+from ecrterm.transmission.transport_serial import SerialMessage
 
+ECR_TRANSPORT_DEBUG = False
+ECR_DEBUG = False
 
 # Only needed to ensure compatibility with older versions of Odoo
 ACTIVE_TERMINAL = None
@@ -159,7 +161,7 @@ class ZVT700PaymentTerminalDriver(Driver):
 
         self.device_connection = 'serial'
 
-        if self._connect_and_configure(self.device_identifier):
+        if self._connect_and_configure(self.device_identifier, enable_ECR_printing=True):
             status = 'connected'
         else:
             status = 'disconnected'
@@ -232,10 +234,12 @@ class ZVT700PaymentTerminalDriver(Driver):
         res = False
         try:
             _logger.debug("Probing device %s with %s protocol" % (device['identifier'], cls.protocol_name))
-            ecr = ECR(device=device['identifier'], password='111111', baudrate=9600)
+            ecr = ECR(device=device['identifier'], password='111111', baudrate=115200)
             # Enable ecrterm logging
-            #ecr.transport.slog = ecr_log
-            #ecr.ecr_log = ecr_log
+            if ECR_TRANSPORT_DEBUG:
+                ecr.transport.slog = ecr_log
+            if ECR_DEBUG:
+                ecr.ecr_log = ecr_log
 
             # Try multiple times in case the PT is still booting
             attempts_total = 5
@@ -260,11 +264,13 @@ class ZVT700PaymentTerminalDriver(Driver):
             pass
         return res
 
-    def _connect_and_configure(self, device):
-        self._ecr = ECR(device=device, password='111111', baudrate=9600)
+    def _connect_and_configure(self, device, enable_ECR_printing=False):
+        self._ecr = ECR(device=device, password='111111', baudrate=115200)
         # Enable ecrterm logging
-        #self._ecr.transport.slog = ecr_log
-        #self._ecr.ecr_log = ecr_log
+        if ECR_TRANSPORT_DEBUG:
+            self._ecr.transport.slog = ecr_log
+        if ECR_DEBUG:
+            self._ecr.ecr_log = ecr_log
 
         attempts_total = 5
         num_attempts = 0
@@ -277,19 +283,19 @@ class ZVT700PaymentTerminalDriver(Driver):
                     CC_EUR = [0x09, 0x78]
 
                     self._ecr.register(config_byte=Registration.generate_config(
-                        ecr_prints_receipt=False,
-                        ecr_prints_admin_receipt=False,
+                        ecr_prints_receipt=enable_ECR_printing,
+                        ecr_prints_admin_receipt=enable_ECR_printing,
                         ecr_controls_admin=True,
                         ecr_controls_payment=True,),
                         cc=CC_EUR,
-                        tlv={'tlv12': [40]}, # Set maximum print line width to 40
+                        tlv={'tlv12': [0x44]}, # Set maximum print line width to 44
                     )
 
                     code = self._ecr.status()
                     _logger.debug("%s terminal status is: %s" % (self.protocol_name, hex(code)))
 
                     if code == 0:
-                        self._ecr.show_text(lines=['Verbindung', 'erfolgreich', 'hergestellt'], beeps=0)
+                        self._ecr.show_text(lines=['Verbindung', 'zur Kasse', 'erfolgreich', 'hergestellt'], beeps=0)
                         res = True
                         break
                     else:
@@ -299,7 +305,6 @@ class ZVT700PaymentTerminalDriver(Driver):
                     _logger.error("TransportLayerException while detecting %s terminal (%s), attempt %d/%d" % (self.protocol_name, self.device_identifier, num_attempts, attempts_total))
                     time.sleep(5)
                     pass
-
         return res
 
     def _get_amount(self, payment_info_dict):
@@ -351,7 +356,7 @@ class ZVT700PaymentTerminalDriver(Driver):
         res = False
         while num_attempts < attempts_total:
             if(num_attempts > 0):
-                time.sleep(0.5)
+                time.sleep(1.5)
                 _logger.debug("Attempt %d/%d in _change_print_config" % (num_attempts+1, attempts_total))
             num_attempts += 1
             try:
@@ -361,7 +366,7 @@ class ZVT700PaymentTerminalDriver(Driver):
                     ecr_controls_admin=True,
                     ecr_controls_payment=True,),
                     cc=CC_EUR,
-                    tlv={'tlv12': [40]},
+                    tlv={'tlv12': [0x44]},
                 )
                 code = self._ecr.status()
                 if code == 0:
@@ -371,7 +376,7 @@ class ZVT700PaymentTerminalDriver(Driver):
                     _logger.warning("Non-zero return code (%d) in _change_print_config" % code)
             except TransportLayerException as e:
                 #Potential timeout, terminal not ready, ignore for now
-                _logger.warning("TransportLayerException in _change_print_config: %s" % traceback.format_exc())
+                _logger.error("TransportLayerException in _change_print_config: %s" % traceback.format_exc())
                 pass
         return res
     
@@ -402,7 +407,7 @@ class ZVT700PaymentTerminalDriver(Driver):
 
         try:
             if not dummy_transaction:
-                self._change_print_config(enable_ECR_printing=True)
+                #self._change_print_config(enable_ECR_printing=True)
                 success = self._ecr.payment(amount_cent=amount)
             else:
                 success = True
@@ -492,19 +497,18 @@ class ZVT700PaymentTerminalDriver(Driver):
             _logger.error("%s %s" % (msg, traceback.format_exc()))
             self._status = {'status': "error", 'message_title': msg, 'message_body': traceback.format_exc()}
             self._push_status()
-        finally:
-            if not dummy_transaction:
-                time.sleep(0.5)
-                self._change_print_config(enable_ECR_printing=False)
+        #finally:
+        #    if not dummy_transaction:
+        #        self._change_print_config(enable_ECR_printing=False)
         return res
 
     def _turnover_totals_start(self, print_receipt=True):
-        self._change_print_config(enable_ECR_printing=True)
+        #self._change_print_config(enable_ECR_printing=True)
 
         now = datetime.datetime.now()
         result = self._ecr.turnover_totals()
         _logger.debug("Turnover totals result: %s" % (result))
-        self._change_print_config(enable_ECR_printing=False)
+        #self._change_print_config(enable_ECR_printing=False)
 
         res = {'result': result}
         if result:
@@ -522,12 +526,12 @@ class ZVT700PaymentTerminalDriver(Driver):
         return res
             
     def _end_of_day_start(self, print_receipt=True):
-        self._change_print_config(enable_ECR_printing=True)
+        #self._change_print_config(enable_ECR_printing=True)
 
         now = datetime.datetime.now()
         result = self._ecr.end_of_day()
         _logger.debug("End of day result: %s" % (result))
-        self._change_print_config(enable_ECR_printing=False)
+        #self._change_print_config(enable_ECR_printing=False)
 
         res = {'result': result}
         if result:
@@ -596,7 +600,7 @@ class ZVT700PaymentTerminalDriver(Driver):
             _logger.debug('Receipt queue empty')
 
     def print_receipt(self, receipt_lines):
-        xml_receipt = "<receipt align=\"center\" value-thousands-separator=\"\" width=\"40\">" + "\n"
+        xml_receipt = "<receipt align=\"center\" value-thousands-separator=\"\" width=\"44\">" + "\n"
         xml_receipt += "<pre>" + "\n"
         xml_receipt += "</pre> \n <pre>".join(receipt_lines)
         xml_receipt += "</pre>" + "\n"
